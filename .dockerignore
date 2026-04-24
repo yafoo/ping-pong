@@ -1,0 +1,10 @@
+# Docker
+Dockerfile
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+LICENSE

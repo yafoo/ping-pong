@@ -2,6 +2,8 @@
 
 一个最小的Docker镜像，能接受WEBHOOK环境变量，在容器启动时访问该URL，并提供ping-pong HTTP服务。
 
+**GitHub仓库**: [https://github.com/yafoo/ping-pong](https://github.com/yafoo/ping-pong)
+
 ## 功能特性
 
 - ✅ 基于Alpine Linux，镜像体积最小

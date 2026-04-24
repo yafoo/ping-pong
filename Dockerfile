@@ -17,7 +17,8 @@ RUN go mod download 2>/dev/null || true
 COPY . .
 
 # 编译Go应用（静态链接，优化大小）
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ping-pong main.go
+# TARGETPLATFORM 和 TARGETARCH 由 Docker Buildx 自动设置
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -ldflags="-s -w" -o ping-pong main.go
 
 # 使用UPX压缩二进制文件
 RUN upx --best --lzma ping-pong

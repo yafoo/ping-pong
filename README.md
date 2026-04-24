@@ -6,11 +6,12 @@
 
 ## 功能特性
 
-- ✅ 基于Alpine Linux，镜像体积最小
+- ✅ 基于scratch镜像，极致最小化（使用Go + UPX压缩）
 - ✅ 支持WEBHOOK环境变量，启动时自动访问指定URL
-- ✅ 提供简单的HTTP ping-pong服务（监听8080端口）
+- ✅ 提供简单的HTTP ping-pong服务（监听10101端口）
 - ✅ 支持多平台构建（amd64, arm64, arm/v7）
 - ✅ GitHub Actions自动构建和推送到DockerHub
+- ✅ 日志带时间戳，方便调试
 
 ## 本地构建和运行
 
@@ -37,6 +38,17 @@ docker run -d -p 10101:10101 -e WEBHOOK=https://www.example.com --name ping-pong
 ```bash
 curl http://localhost:10101
 # 返回: pong
+```
+
+### 查看日志
+
+```bash
+docker logs ping-pong
+# 输出示例:
+# [2026-04-24 17:30:15] 正在访问指定的WEBHOOK: https://www.example.com
+# [2026-04-24 17:30:16] WEBHOOK访问完成
+# [2026-04-24 17:30:16] 启动ping-pong HTTP服务（端口10101）...
+# [2026-04-24 17:30:16] 服务已启动，监听端口 10101
 ```
 
 ## 环境变量

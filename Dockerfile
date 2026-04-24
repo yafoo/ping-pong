@@ -1,23 +1,39 @@
-# 使用Alpine作为基础镜像（最小化）
-FROM alpine:latest
+# 第一阶段：构建Go应用
+FROM golang:1.21-alpine AS builder
 
-# 安装必要的工具：netcat-openbsd用于HTTP服务，wget用于访问URL，socat用于更好的TCP处理
-RUN apk add --no-cache netcat-openbsd wget socat
+# 安装UPX压缩工具
+RUN apk add --no-cache upx
 
 # 设置工作目录
 WORKDIR /app
 
-# 复制启动脚本
-COPY entrypoint.sh /app/entrypoint.sh
+# 初始化go module
+COPY go.mod go.sum ./
+RUN go mod download
 
-# 赋予执行权限
-RUN chmod +x /app/entrypoint.sh
+# 复制源代码
+COPY . .
+
+# 编译Go应用（静态链接，优化大小）
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ping-pong main.go
+
+# 使用UPX压缩二进制文件
+RUN upx --best --lzma ping-pong
+
+# 第二阶段：最小运行时镜像
+FROM scratch
+
+# 设置工作目录
+WORKDIR /app
+
+# 从构建阶段复制压缩后的二进制文件
+COPY --from=builder /app/ping-pong .
 
 # 暴露端口
 EXPOSE 10101
 
-# 设置环境变量（可选，提供默认值）
+# 设置环境变量
 ENV WEBHOOK=""
 
-# 启动容器
-ENTRYPOINT ["/app/entrypoint.sh"]
+# 启动应用
+ENTRYPOINT ["/app/ping-pong"]

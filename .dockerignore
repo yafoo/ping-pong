@@ -1,5 +1,6 @@
 # Docker
 Dockerfile
+.dockerignore
 
 # Git
 .git/
@@ -8,3 +9,13 @@ Dockerfile
 # Documentation
 *.md
 LICENSE
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

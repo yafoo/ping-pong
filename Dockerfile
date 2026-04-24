@@ -7,9 +7,14 @@ RUN apk add --no-cache upx
 # 设置工作目录
 WORKDIR /app
 
-# 初始化go module
-COPY go.mod go.sum ./
-RUN go mod download
+# 先复制go.mod（利用Docker缓存层）
+COPY go.mod ./
+
+# 如果有go.sum也复制（可选，纯标准库项目可能没有）
+COPY go.sum ./ || true
+
+# 下载依赖（如果有外部依赖会在这里缓存）
+RUN go mod download || true
 
 # 复制源代码
 COPY . .

@@ -1,8 +1,8 @@
 # 使用Alpine作为基础镜像（最小化）
 FROM alpine:latest
 
-# 安装必要的工具：netcat-openbsd用于HTTP服务，wget用于访问URL
-RUN apk add --no-cache netcat-openbsd wget
+# 安装必要的工具：netcat-openbsd用于HTTP服务，wget用于访问URL，socat用于更好的TCP处理
+RUN apk add --no-cache netcat-openbsd wget socat
 
 # 设置工作目录
 WORKDIR /app

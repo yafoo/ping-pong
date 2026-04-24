@@ -10,11 +10,8 @@ WORKDIR /app
 # 先复制go.mod（利用Docker缓存层）
 COPY go.mod ./
 
-# 如果有go.sum也复制（可选，纯标准库项目可能没有）
-COPY go.sum ./ || true
-
-# 下载依赖（如果有外部依赖会在这里缓存）
-RUN go mod download || true
+# 下载依赖（如果有外部依赖会在这里缓存，纯标准库项目会跳过）
+RUN go mod download 2>/dev/null || true
 
 # 复制源代码
 COPY . .

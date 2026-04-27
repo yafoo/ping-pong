@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 )
@@ -19,6 +20,44 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("pong"))
 }
 
+// encodeWebhookURL 智能处理 webhook URL 编码
+func encodeWebhookURL(rawURL string) (string, error) {
+	// 解析 URL
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("URL解析失败: %v", err)
+	}
+
+	// 检查查询参数是否已经编码过
+	query := parsedURL.RawQuery
+	if query == "" {
+		return rawURL, nil
+	}
+
+	// 尝试解码后再重新编码，确保正确编码
+	decodedQuery, err := url.QueryUnescape(query)
+	if err != nil {
+		// 如果解码失败，说明可能已经正确编码或部分编码
+		// 直接对每个参数值进行编码
+		values, _ := url.ParseQuery(query)
+		encodedValues := make(url.Values)
+		for k, v := range values {
+			encodedValues[k] = v // 保持原样
+		}
+		parsedURL.RawQuery = encodedValues.Encode()
+		return parsedURL.String(), nil
+	}
+
+	// 成功解码后，重新编码以确保一致性
+	values, err := url.ParseQuery(decodedQuery)
+	if err != nil {
+		return rawURL, nil
+	}
+
+	parsedURL.RawQuery = values.Encode()
+	return parsedURL.String(), nil
+}
+
 func main() {
 	// 检查WEBHOOK环境变量
 	webhook := os.Getenv("WEBHOOK")
@@ -26,6 +65,15 @@ func main() {
 		logWithTime("警告: WEBHOOK 环境变量未设置，将跳过URL访问步骤")
 	} else {
 		logWithTime("正在访问指定的WEBHOOK")
+
+		// 智能处理 URL 编码
+		encodedWebhook, err := encodeWebhookURL(webhook)
+		if err != nil {
+			logWithTime(fmt.Sprintf("URL编码处理警告: %v（使用原始URL）", err))
+			encodedWebhook = webhook
+		} else if encodedWebhook != webhook {
+			logWithTime("已对WEBHOOK URL进行编码处理")
+		}
 
 		// 创建自定义 HTTP 客户端，跳过证书验证
 		tr := &http.Transport{
@@ -36,7 +84,7 @@ func main() {
 			Transport: tr,
 		}
 
-		resp, err := client.Get(webhook)
+		resp, err := client.Get(encodedWebhook)
 		if err != nil {
 			logWithTime(fmt.Sprintf("访问WEBHOOK失败: %v（继续启动服务）", err))
 		} else {

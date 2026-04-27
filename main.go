@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/tls"
+	"flag"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -59,10 +60,24 @@ func encodeWebhookURL(rawURL string) (string, error) {
 }
 
 func main() {
-	// 检查WEBHOOK环境变量
-	webhook := os.Getenv("WEBHOOK")
+	// 定义命令行参数（同时支持长短格式）
+	webhookShort := flag.String("w", "", "Webhook URL to call on startup (short)")
+	webhookLong := flag.String("webhook", "", "Webhook URL to call on startup (long)")
+	portShort := flag.String("p", "", "HTTP service port (default: 10101) (short)")
+	portLong := flag.String("port", "", "HTTP service port (default: 10101) (long)")
+	flag.Parse()
+
+	// 获取WEBHOOK：长参数优先，其次短参数，最后环境变量
+	webhook := *webhookLong
 	if webhook == "" {
-		logWithTime("警告: WEBHOOK 环境变量未设置，将跳过URL访问步骤")
+		webhook = *webhookShort
+	}
+	if webhook == "" {
+		webhook = os.Getenv("WEBHOOK")
+	}
+	
+	if webhook == "" {
+		logWithTime("警告: WEBHOOK 未设置（既无命令行参数也无环境变量），将跳过URL访问步骤")
 	} else {
 		logWithTime("正在访问指定的WEBHOOK")
 
@@ -93,8 +108,17 @@ func main() {
 		}
 	}
 
-	// 启动HTTP服务
-	port := "10101"
+	// 获取PORT：长参数优先，其次短参数，然后环境变量，最后默认值
+	port := *portLong
+	if port == "" {
+		port = *portShort
+	}
+	if port == "" {
+		port = os.Getenv("PORT")
+	}
+	if port == "" {
+		port = "10101"
+	}
 	logWithTime(fmt.Sprintf("启动ping-pong HTTP服务（端口%s）...", port))
 
 	http.HandleFunc("/", pingHandler)

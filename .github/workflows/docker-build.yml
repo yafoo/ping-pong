@@ -138,6 +138,6 @@ jobs:
           release/ping-pong-windows-amd64.zip
           release/ping-pong-darwin-amd64.tar.gz
           release/ping-pong-darwin-arm64.tar.gz
-        token: ${{ secrets.RELEASE_TOKEN }}
+        # token: ${{ secrets.RELEASE_TOKEN }}
         append_body: false
         generate_release_notes: false

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net/http"
 	"os"
@@ -26,9 +27,13 @@ func main() {
 	} else {
 		logWithTime("正在访问指定的WEBHOOK")
 
-		// 使用HTTP客户端访问WEBHOOK URL
+		// 创建自定义 HTTP 客户端，跳过证书验证
+		tr := &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
 		client := &http.Client{
-			Timeout: 10 * time.Second,
+			Timeout:   10 * time.Second,
+			Transport: tr,
 		}
 
 		resp, err := client.Get(webhook)

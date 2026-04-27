@@ -8,6 +8,11 @@ on:
   pull_request:
     branches: [ main, master, dev ]
 
+# 设置工作流权限
+permissions:
+  contents: write  # 需要写入权限以上传Release资产
+  packages: write  # 需要写入权限以推送Docker镜像
+
 env:
   DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
   DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}

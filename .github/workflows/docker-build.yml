@@ -4,6 +4,8 @@ on:
   push:
     branches: [ main, master, dev ]
     tags: [ 'v*' ]
+  release:
+    types: [ published ]
   pull_request:
     branches: [ main, master, dev ]
 
@@ -45,7 +47,7 @@ jobs:
           type=raw,value=dev,enable=${{ github.ref == 'refs/heads/dev' }}
           type=ref,event=branch,enable=${{ !startsWith(github.ref, 'refs/tags/') }}
           type=semver,pattern={{version}}
-
+    
     - name: Build and push multi-platform image
       id: docker_build
       uses: docker/build-push-action@v6
@@ -60,3 +62,76 @@ jobs:
     
     - name: Image digest
       run: echo ${{ steps.docker_build.outputs.digest }}
+
+  build-binaries:
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release'
+    needs: build-and-push
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+        cache: true
+    
+    - name: Create release directory
+      run: mkdir -p release
+    
+    - name: Build for Linux amd64
+      run: |
+        GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o release/ping-pong-linux-amd64 main.go
+    
+    - name: Build for Linux arm64
+      run: |
+        GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o release/ping-pong-linux-arm64 main.go
+    
+    - name: Build for Windows amd64
+      run: |
+        GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o release/ping-pong-windows-amd64.exe main.go
+    
+    - name: Build for macOS amd64
+      run: |
+        GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o release/ping-pong-darwin-amd64 main.go
+    
+    - name: Build for macOS arm64 (Apple Silicon)
+      run: |
+        GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o release/ping-pong-darwin-arm64 main.go
+    
+    - name: Install UPX
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y upx-ucl
+    
+    - name: Compress binaries with UPX
+      run: |
+        cd release
+        upx --best --lzma ping-pong-linux-amd64 || true
+        upx --best --lzma ping-pong-linux-arm64 || true
+        upx --best --lzma ping-pong-windows-amd64.exe || true
+        upx --best --lzma ping-pong-darwin-amd64 || true
+        upx --best --lzma ping-pong-darwin-arm64 || true
+    
+    - name: Compress binaries
+      run: |
+        cd release
+        tar czf ping-pong-linux-amd64.tar.gz ping-pong-linux-amd64
+        tar czf ping-pong-linux-arm64.tar.gz ping-pong-linux-arm64
+        zip ping-pong-windows-amd64.zip ping-pong-windows-amd64.exe
+        tar czf ping-pong-darwin-amd64.tar.gz ping-pong-darwin-amd64
+        tar czf ping-pong-darwin-arm64.tar.gz ping-pong-darwin-arm64
+        rm ping-pong-linux-amd64 ping-pong-linux-arm64 ping-pong-windows-amd64.exe ping-pong-darwin-amd64 ping-pong-darwin-arm64
+    
+    - name: Upload Release Assets
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          release/ping-pong-linux-amd64.tar.gz
+          release/ping-pong-linux-arm64.tar.gz
+          release/ping-pong-windows-amd64.zip
+          release/ping-pong-darwin-amd64.tar.gz
+          release/ping-pong-darwin-arm64.tar.gz
+        token: ${{ secrets.GITHUB_TOKEN }}

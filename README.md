@@ -1,14 +1,15 @@
 # Ping Pong Docker Service
 
-一个最小的Docker镜像，能接受WEBHOOK环境变量，在容器启动时访问该URL，并提供ping-pong HTTP服务。
+一个最小的Docker镜像，支持WEBHOOK环境变量和命令行参数，在容器启动时访问指定URL，并提供ping-pong HTTP服务。
 
 **GitHub仓库**: [https://github.com/yafoo/ping-pong](https://github.com/yafoo/ping-pong)
 
 ## 功能特性
 
 - ✅ 基于scratch镜像，极致最小化（使用Go + UPX压缩）
-- ✅ 支持WEBHOOK环境变量，启动时自动访问指定URL
-- ✅ 提供简单的HTTP ping-pong服务（监听10101端口）
+- ✅ 支持WEBHOOK配置（环境变量或命令行参数）
+- ✅ 支持自定义端口（环境变量或命令行参数）
+- ✅ 提供简单的HTTP ping-pong服务
 - ✅ 支持多平台构建（amd64, arm64, arm/v7）
 - ✅ GitHub Actions自动构建和推送到DockerHub
 - ✅ 日志带时间戳，方便调试
@@ -18,19 +19,70 @@
 ### 构建镜像
 
 ```bash
-docker build -t ping-pong .
+docker build -t yafoo/ping-pong .
 ```
 
 ### 运行容器
 
-不带WEBHOOK：
+#### 方式1：使用默认配置
+
 ```bash
-docker run -d -p 10101:10101 --name ping-pong ping-pong
+docker run -d -p 10101:10101 --name ping-pong yafoo/ping-pong
 ```
 
-带WEBHOOK环境变量：
+#### 方式2：使用环境变量
+
 ```bash
-docker run -d -p 10101:10101 -e WEBHOOK=https://www.example.com --name ping-pong ping-pong
+# 仅设置WEBHOOK
+docker run -d -p 10101:10101 \
+  -e WEBHOOK=https://www.example.com \
+  --name ping-pong yafoo/ping-pong
+
+# 同时设置WEBHOOK和端口
+docker run -d -p 8080:8080 \
+  -e WEBHOOK=https://www.example.com \
+  -e PORT=8080 \
+  --name ping-pong yafoo/ping-pong
+```
+
+#### 方式3：使用命令行参数
+
+```bash
+# 仅设置端口
+docker run -d -p 8080:8080 \
+  --name ping-pong yafoo/ping-pong \
+  --port 8080
+
+# 同时设置WEBHOOK和端口
+docker run -d -p 8080:8080 \
+  --name ping-pong yafoo/ping-pong \
+  --webhook https://www.example.com \
+  --port 8080
+
+# 使用短参数格式
+docker run -d -p 8080:8080 \
+  --name ping-pong yafoo/ping-pong \
+  -w https://www.example.com \
+  -p 8080
+```
+
+### 直接运行（非Docker）
+
+```bash
+# 编译
+go build -o ping main.go
+
+# 使用默认配置
+./ping
+
+# 使用命令行参数
+./ping --port 8080 --webhook https://www.example.com
+./ping -p 8080 -w https://www.example.com
+
+# 使用环境变量
+export PORT=8080
+export WEBHOOK=https://www.example.com
+./ping
 ```
 
 ### 测试服务
@@ -45,17 +97,51 @@ curl http://localhost:10101
 ```bash
 docker logs ping-pong
 # 输出示例:
-# [2026-04-24 17:30:15] 正在访问指定的WEBHOOK: https://www.example.com
+# [2026-04-24 17:30:15] 正在访问指定的WEBHOOK
 # [2026-04-24 17:30:16] WEBHOOK访问完成
 # [2026-04-24 17:30:16] 启动ping-pong HTTP服务（端口10101）...
 # [2026-04-24 17:30:16] 服务已启动，监听端口 10101
 ```
 
-## 环境变量
+## 配置说明
 
-| 变量名 | 说明 | 默认值 |
-|--------|------|--------|
-| WEBHOOK | 容器启动时要访问的URL | 空（跳过） |
+### 配置优先级
+
+配置加载遵循以下优先级顺序（从高到低）：
+
+1. **命令行短参数**（`-p`, `-w`）
+2. **命令行长参数**（`--port`, `--webhook`）
+3. **环境变量**（`PORT`, `WEBHOOK`）
+4. **默认值**（端口：10101，WEBHOOK：空）
+
+**示例**：如果同时设置了 `-p 8080` 和 `--port 9090`，实际使用的端口是 `8080`（短参数优先）。
+
+### 可用参数
+
+| 参数类型 | 短参数 | 长参数 | 环境变量 | 说明 | 默认值 |
+|---------|--------|--------|----------|------|--------|
+| 端口 | `-p` | `--port` | `PORT` | HTTP服务监听端口 | `10101` |
+| Webhook | `-w` | `--webhook` | `WEBHOOK` | 启动时访问的URL | 空（跳过） |
+
+### 参数格式示例
+
+```bash
+# 长参数格式
+./ping --port 8080 --webhook https://example.com/hook
+
+# 短参数格式
+./ping -p 8080 -w https://example.com/hook
+
+# 等号格式
+./ping --port=8080 --webhook=https://example.com/hook
+./ping -p=8080 -w=https://example.com/hook
+
+# 混合格式
+./ping --port 8080 -w https://example.com/hook
+
+# 查看帮助
+./ping -h
+```
 
 ## GitHub Actions 配置
 
@@ -103,7 +189,7 @@ docker logs ping-pong
 ```
 .
 ├── Dockerfile              # Docker镜像定义
-├── entrypoint.sh           # 容器启动脚本
+├── main.go                 # Go应用程序主文件
 └── .github/
     └── workflows/
         └── docker-build.yml # GitHub Actions配置

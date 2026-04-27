@@ -67,10 +67,10 @@ func main() {
 	portLong := flag.String("port", "", "HTTP service port (default: 10101) (long)")
 	flag.Parse()
 
-	// 获取WEBHOOK：长参数优先，其次短参数，最后环境变量
-	webhook := *webhookLong
+	// 获取WEBHOOK：短参数优先，其次长参数，最后环境变量
+	webhook := *webhookShort
 	if webhook == "" {
-		webhook = *webhookShort
+		webhook = *webhookLong
 	}
 	if webhook == "" {
 		webhook = os.Getenv("WEBHOOK")
@@ -108,10 +108,10 @@ func main() {
 		}
 	}
 
-	// 获取PORT：长参数优先，其次短参数，然后环境变量，最后默认值
-	port := *portLong
+	// 获取PORT：短参数优先，其次长参数，然后环境变量，最后默认值
+	port := *portShort
 	if port == "" {
-		port = *portShort
+		port = *portLong
 	}
 	if port == "" {
 		port = os.Getenv("PORT")

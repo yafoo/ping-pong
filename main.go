@@ -61,6 +61,28 @@ func encodeWebhookURL(rawURL string) (string, error) {
 	return parsedURL.String(), nil
 }
 
+// getConfigValue 通用配置获取函数，按优先级获取：短参数 > 长参数 > 环境变量 > 默认值
+func getConfigValue(shortParam *string, longParam *string, envKey string, defaultValue string) string {
+	// 1. 短参数优先
+	if shortParam != nil && *shortParam != "" {
+		return *shortParam
+	}
+
+	// 2. 长参数次之
+	if longParam != nil && *longParam != "" {
+		return *longParam
+	}
+
+	// 3. 环境变量再次
+	envValue := os.Getenv(envKey)
+	if envValue != "" {
+		return envValue
+	}
+
+	// 4. 默认值
+	return defaultValue
+}
+
 // parseMultiValue 解析支持分隔符的多值参数
 func parseMultiValue(value string, defaultValue string) []string {
 	if value == "" {
@@ -105,11 +127,11 @@ func monitorURL(targetURL string, intervalMinutes int, webhookURL string, webhoo
 		select {
 		case <-ticker.C:
 			logWithTime(fmt.Sprintf("正在检查URL: %s", targetURL))
-			
+
 			// 尝试访问目标URL
 			resp, err := client.Get(targetURL)
 			failed := false
-			
+
 			if err != nil {
 				logWithTime(fmt.Sprintf("URL访问失败: %s - 错误: %v", targetURL, err))
 				failed = true
@@ -134,7 +156,7 @@ func monitorURL(targetURL string, intervalMinutes int, webhookURL string, webhoo
 					}
 					notificationURL = webhookURL + separator + webhookParam
 				}
-				
+
 				logWithTime(fmt.Sprintf("发送失败通知到: %s", notificationURL))
 				webhookResp, webhookErr := client.Get(notificationURL)
 				if webhookErr != nil {
@@ -162,7 +184,7 @@ func startMonitoring(monitorURLs []string, intervals []string, webhookURL string
 		if i < len(intervals) && intervals[i] != "" {
 			intervalStr = intervals[i]
 		}
-		
+
 		intervalMinutes, err := strconv.Atoi(intervalStr)
 		if err != nil || intervalMinutes <= 0 {
 			logWithTime(fmt.Sprintf("警告: 无效的间隔值 '%s',使用默认值10分钟", intervalStr))
@@ -186,26 +208,24 @@ func main() {
 	webhookLong := flag.String("webhook", "", "Webhook URL to call on startup (long)")
 	portShort := flag.String("p", "", "HTTP service port (default: 10101) (short)")
 	portLong := flag.String("port", "", "HTTP service port (default: 10101) (long)")
-	
+
 	// 新增监控相关参数
-	monitorURLsShort := flag.String("m", "", "URLs to monitor (comma/semicolon/pipe separated) (short)")
-	monitorURLsLong := flag.String("monitor-urls", "", "URLs to monitor (comma/semicolon/pipe separated) (long)")
-	intervalsShort := flag.String("i", "", "Monitor intervals in minutes (comma/semicolon/pipe separated, default: 10) (short)")
-	intervalsLong := flag.String("monitor-intervals", "", "Monitor intervals in minutes (comma/semicolon/pipe separated, default: 10) (long)")
+	pingURLShort := flag.String("u", "", "URL to ping/monitor (comma/semicolon/pipe separated for multiple) (short)")
+	pingURLLong := flag.String("ping-url", "", "URL to ping/monitor (comma/semicolon/pipe separated for multiple) (long)")
+	pingIntervalShort := flag.String("i", "", "Ping interval in minutes (comma/semicolon/pipe separated, default: 10) (short)")
+	pingIntervalLong := flag.String("ping-interval", "", "Ping interval in minutes (comma/semicolon/pipe separated, default: 10) (long)")
 	webhookParamsShort := flag.String("wp", "", "Webhook parameters to append on failure (comma/semicolon/pipe separated) (short)")
 	webhookParamsLong := flag.String("webhook-params", "", "Webhook parameters to append on failure (comma/semicolon/pipe separated) (long)")
-	
+
 	flag.Parse()
 
-	// 获取WEBHOOK：短参数优先，其次长参数，最后环境变量
-	webhook := *webhookShort
-	if webhook == "" {
-		webhook = *webhookLong
-	}
-	if webhook == "" {
-		webhook = os.Getenv("WEBHOOK")
-	}
-	
+	// 使用通用函数获取配置
+	webhook := getConfigValue(webhookShort, webhookLong, "WEBHOOK", "")
+	port := getConfigValue(portShort, portLong, "PORT", "10101")
+	pingURLValue := getConfigValue(pingURLShort, pingURLLong, "PING_URL", "")
+	pingIntervalValue := getConfigValue(pingIntervalShort, pingIntervalLong, "PING_INTERVAL", "")
+	webhookParamsValue := getConfigValue(webhookParamsShort, webhookParamsLong, "WEBHOOK_PARAMS", "")
+
 	if webhook == "" {
 		logWithTime("警告: WEBHOOK 未设置（既无命令行参数也无环境变量），将跳过URL访问步骤")
 	} else {
@@ -238,55 +258,17 @@ func main() {
 		}
 	}
 
-	// 获取PORT：短参数优先，其次长参数，然后环境变量，最后默认值
-	port := *portShort
-	if port == "" {
-		port = *portLong
-	}
-	if port == "" {
-		port = os.Getenv("PORT")
-	}
-	if port == "" {
-		port = "10101"
-	}
 	logWithTime(fmt.Sprintf("启动ping-pong HTTP服务（端口%s）...", port))
 
 	http.HandleFunc("/", pingHandler)
 
-	// 处理监控URL参数
-	monitorURLsValue := *monitorURLsShort
-	if monitorURLsValue == "" {
-		monitorURLsValue = *monitorURLsLong
-	}
-	if monitorURLsValue == "" {
-		monitorURLsValue = os.Getenv("MONITOR_URLS")
-	}
-
-	// 处理监控间隔参数
-	intervalsValue := *intervalsShort
-	if intervalsValue == "" {
-		intervalsValue = *intervalsLong
-	}
-	if intervalsValue == "" {
-		intervalsValue = os.Getenv("MONITOR_INTERVALS")
-	}
-
-	// 处理webhook参数
-	webhookParamsValue := *webhookParamsShort
-	if webhookParamsValue == "" {
-		webhookParamsValue = *webhookParamsLong
-	}
-	if webhookParamsValue == "" {
-		webhookParamsValue = os.Getenv("WEBHOOK_PARAMS")
-	}
-
 	// 启动监控服务
-	if monitorURLsValue != "" {
-		monitorURLs := parseMultiValue(monitorURLsValue, "")
-		intervals := parseMultiValue(intervalsValue, "10")
+	if pingURLValue != "" {
+		pingURLs := parseMultiValue(pingURLValue, "")
+		intervals := parseMultiValue(pingIntervalValue, "10")
 		webhookParams := parseMultiValue(webhookParamsValue, "")
-		
-		startMonitoring(monitorURLs, intervals, webhook, webhookParams)
+
+		startMonitoring(pingURLs, intervals, webhook, webhookParams)
 	}
 
 	server := &http.Server{

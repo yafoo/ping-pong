@@ -9,6 +9,7 @@
 - ✅ 基于scratch镜像，极致最小化（使用Go + UPX压缩）
 - ✅ 支持WEBHOOK配置（环境变量或命令行参数）
 - ✅ 支持自定义端口（环境变量或命令行参数）
+- ✅ **支持URL监控轮询**（定时检查目标URL健康状态，失败时发送webhook通知）
 - ✅ 提供简单的HTTP ping-pong服务
 - ✅ 支持多平台构建（amd64, arm64, arm/v7）
 - ✅ GitHub Actions自动构建和推送到DockerHub
@@ -43,6 +44,14 @@ docker run -d -p 8080:8080 \
   -e WEBHOOK=https://www.example.com \
   -e PORT=8080 \
   --name ping-pong yafoo/ping-pong
+
+# 启用URL监控功能
+docker run -d -p 10101:10101 \
+  -e PING_URL="https://api1.com,https://api2.com" \
+  -e PING_INTERVAL="5,15" \
+  -e WEBHOOK_PARAMS="service=api1,service=api2" \
+  -e WEBHOOK="https://notify.example.com/alert" \
+  --name ping-pong yafoo/ping-pong
 ```
 
 #### 方式3：使用命令行参数
@@ -64,6 +73,22 @@ docker run -d -p 8080:8080 \
   --name ping-pong yafoo/ping-pong \
   -w https://www.example.com \
   -p 8080
+
+# 启用URL监控功能（长参数）
+docker run -d -p 10101:10101 \
+  --name ping-pong yafoo/ping-pong \
+  --ping-url "https://api1.com,https://api2.com" \
+  --ping-interval "5,15" \
+  --webhook-params "service=api1,service=api2" \
+  --webhook "https://notify.example.com/alert"
+
+# 启用URL监控功能（短参数）
+docker run -d -p 10101:10101 \
+  --name ping-pong yafoo/ping-pong \
+  -u "https://api1.com;https://api2.com" \
+  -i "5;15" \
+  -wp "service=api1;service=api2" \
+  -w "https://notify.example.com/alert"
 ```
 
 ### 直接运行（非Docker）
@@ -83,6 +108,18 @@ go build -o ping main.go
 export PORT=8080
 export WEBHOOK=https://www.example.com
 ./ping
+
+# 启用URL监控功能
+./ping --ping-url "https://api1.com,https://api2.com" \
+       --ping-interval "5,15" \
+       --webhook-params "service=api1,service=api2" \
+       --webhook "https://notify.example.com/alert"
+
+# 使用短参数
+./ping -u "https://api1.com;https://api2.com" \
+       -i "5;15" \
+       -wp "service=api1;service=api2" \
+       -w "https://notify.example.com/alert"
 ```
 
 ### 测试服务
@@ -94,13 +131,24 @@ curl http://localhost:10101
 
 ### 查看日志
 
-```bash
+```
 docker logs ping-pong
-# 输出示例:
+# 输出示例（基础模式）:
 # [2026-04-24 17:30:15] 正在访问指定的WEBHOOK
 # [2026-04-24 17:30:16] WEBHOOK访问完成
 # [2026-04-24 17:30:16] 启动ping-pong HTTP服务（端口10101）...
 # [2026-04-24 17:30:16] 服务已启动，监听端口 10101
+
+# 输出示例（启用URL监控）:
+# [2026-04-24 17:30:15] 正在访问指定的WEBHOOK
+# [2026-04-24 17:30:16] WEBHOOK访问完成
+# [2026-04-24 17:30:16] 启动URL监控服务,共 2 个监控目标
+# [2026-04-24 17:30:16] 开始监控URL: https://api1.com (间隔: 5分钟)
+# [2026-04-24 17:30:16] 开始监控URL: https://api2.com (间隔: 15分钟)
+# [2026-04-24 17:30:16] 启动ping-pong HTTP服务（端口10101）...
+# [2026-04-24 17:30:16] 服务已启动，监听端口 10101
+# [2026-04-24 17:35:16] 正在检查URL: https://api1.com
+# [2026-04-24 17:35:17] URL访问成功: https://api1.com - 状态码: 200
 ```
 
 ## 配置说明
@@ -109,10 +157,10 @@ docker logs ping-pong
 
 配置加载遵循以下优先级顺序（从高到低）：
 
-1. **命令行短参数**（`-p`, `-w`）
-2. **命令行长参数**（`--port`, `--webhook`）
-3. **环境变量**（`PORT`, `WEBHOOK`）
-4. **默认值**（端口：10101，WEBHOOK：空）
+1. **命令行短参数**（`-p`, `-w`, `-u`, `-i`, `-wp`）
+2. **命令行长参数**（`--port`, `--webhook`, `--ping-url`, `--ping-interval`, `--webhook-params`）
+3. **环境变量**（`PORT`, `WEBHOOK`, `PING_URL`, `PING_INTERVAL`, `WEBHOOK_PARAMS`）
+4. **默认值**（端口：10101，其他：空或默认值）
 
 **示例**：如果同时设置了 `-p 8080` 和 `--port 9090`，实际使用的端口是 `8080`（短参数优先）。
 
@@ -121,11 +169,61 @@ docker logs ping-pong
 | 参数类型 | 短参数 | 长参数 | 环境变量 | 说明 | 默认值 |
 |---------|--------|--------|----------|------|--------|
 | 端口 | `-p` | `--port` | `PORT` | HTTP服务监听端口 | `10101` |
-| Webhook | `-w` | `--webhook` | `WEBHOOK` | 启动时访问的URL | 空（跳过） |
+| Webhook | `-w` | `--webhook` | `WEBHOOK` | 启动时访问的URL，失败通知的目标URL | 空（跳过） |
+| 监控URL | `-u` | `--ping-url` | `PING_URL` | 要监控的URL（支持多个，用逗号/分号/竖线分隔） | 空（不启用监控） |
+| 监控间隔 | `-i` | `--ping-interval` | `PING_INTERVAL` | 监控间隔时间（分钟，支持多个，与URL一一对应） | `10` |
+| Webhook参数 | `-wp` | `--webhook-params` | `WEBHOOK_PARAMS` | 失败通知时追加的参数（支持多个，与URL一一对应） | 空 |
+
+### URL监控功能详解
+
+**功能说明**：
+- 系统启动后，如果设置了 `--ping-url`，会启动后台服务定时访问这些URL
+- 每个URL可以配置独立的轮询间隔时间
+- 如果访问失败（网络错误或HTTP状态码非2xx），则调用webhook URL发送通知
+- webhook通知时可以追加自定义参数（用于标识哪个URL失败、失败原因等）
+
+**多值分隔符**：
+支持三种分隔符来设置多个值：
+- 逗号 `,`
+- 分号 `;`
+- 竖线 `|`
+
+**使用示例**：
+
+```
+# 单个URL监控（每5分钟检查一次）
+./ping -u "https://api.example.com" -i "5" -wp "service=api"
+
+# 多个URL监控（不同间隔和参数）
+./ping -u "https://api1.com,https://api2.com,https://api3.com" \
+       -i "5,10,15" \
+       -wp "url=api1&status=down,url=api2&status=down,url=api3&status=down"
+
+# 使用不同分隔符
+./ping -u "https://api1.com;https://api2.com" \
+       -i "5|10" \
+       -wp "service=api1|service=api2"
+
+# Docker环境
+docker run -d -p 10101:10101 \
+  -e PING_URL="https://api1.com,https://api2.com" \
+  -e PING_INTERVAL="5,15" \
+  -e WEBHOOK_PARAMS="service=api1,service=api2" \
+  -e WEBHOOK="https://notify.example.com/alert?token=xxx" \
+  yafoo/ping-pong
+```
+
+**工作流程**：
+1. 解析配置的监控URL列表
+2. 为每个URL启动独立的goroutine进行监控
+3. 按照配置的间隔时间定时访问URL
+4. 检测访问结果（网络错误或非2xx状态码视为失败）
+5. 失败时调用webhook URL，并追加对应的参数
+6. 持续循环监控
 
 ### 参数格式示例
 
-```bash
+```
 # 长参数格式
 ./ping --port 8080 --webhook https://example.com/hook
 
@@ -138,6 +236,12 @@ docker logs ping-pong
 
 # 混合格式
 ./ping --port 8080 -w https://example.com/hook
+
+# URL监控完整示例
+./ping -u "https://api1.com,https://api2.com" \
+       -i "5,15" \
+       -wp "service=api1,service=api2" \
+       -w "https://notify.example.com/alert"
 
 # 查看帮助
 ./ping -h

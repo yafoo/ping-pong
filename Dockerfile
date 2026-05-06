@@ -35,8 +35,13 @@ COPY --from=builder /app/ping-pong .
 # 暴露端口
 EXPOSE 10101
 
-# 设置环境变量
+# 设置环境变量（基础配置）
 ENV WEBHOOK=""
+
+# 设置URL监控相关环境变量（可选）
+ENV PING_URL=""
+ENV PING_INTERVAL="10"
+ENV WEBHOOK_PARAMS=""
 
 # 启动应用
 ENTRYPOINT ["/app/ping-pong"]

@@ -83,6 +83,39 @@ func getConfigValue(shortParam *string, longParam *string, envKey string, defaul
 	return defaultValue
 }
 
+// mergeWebhookParams 智能合并webhook参数，重名参数会被替换
+func mergeWebhookParams(baseURL string, newParams string) string {
+	if newParams == "" {
+		return baseURL
+	}
+
+	// 解析基础URL
+	parsedURL, err := url.Parse(baseURL)
+	if err != nil {
+		// 如果URL解析失败，直接追加
+		separator := "?"
+		if strings.Contains(baseURL, "?") {
+			separator = "&"
+		}
+		return baseURL + separator + newParams
+	}
+
+	// 解析现有查询参数
+	existingParams, _ := url.ParseQuery(parsedURL.RawQuery)
+
+	// 解析新参数
+	newParamsParsed, _ := url.ParseQuery(newParams)
+
+	// 合并参数：新参数会覆盖同名的旧参数
+	for key, values := range newParamsParsed {
+		existingParams[key] = values
+	}
+
+	// 重新编码查询字符串
+	parsedURL.RawQuery = existingParams.Encode()
+	return parsedURL.String()
+}
+
 // parseMultiValue 解析支持分隔符的多值参数
 func parseMultiValue(value string, defaultValue string) []string {
 	if value == "" {
@@ -149,12 +182,8 @@ func monitorURL(targetURL string, intervalMinutes int, webhookURL string, webhoo
 			if failed && webhookURL != "" {
 				notificationURL := webhookURL
 				if webhookParam != "" {
-					// 将参数追加到webhook URL
-					separator := "?"
-					if strings.Contains(webhookURL, "?") {
-						separator = "&"
-					}
-					notificationURL = webhookURL + separator + webhookParam
+					// 智能合并参数：解析现有参数，替换或新增
+					notificationURL = mergeWebhookParams(webhookURL, webhookParam)
 				}
 
 				logWithTime(fmt.Sprintf("发送失败通知到: %s", notificationURL))

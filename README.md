@@ -1,6 +1,6 @@
 # Ping Pong Docker Service
 
-一个最小的Docker镜像，支持WEBHOOK环境变量和命令行参数，在容器启动时访问指定URL，并提供ping-pong HTTP服务。
+一个最小的Docker镜像，在启动时访问指定WEBHOOK，并提供ping-pong HTTP服务，同时提供多个URL监控通知功能。
 
 **GitHub仓库**: [https://github.com/yafoo/ping-pong](https://github.com/yafoo/ping-pong)
 
@@ -204,22 +204,99 @@ docker logs ping-pong
        -i "5|10" \
        -wp "service=api1|service=api2"
 
+# 使用变量占位符（推荐用单引号包裹参数，避免shell转义问题）
+./ping -u "https://api.example.com" \
+       -wp 'msg=服务异常&url={$url}&error={$err}&time={$time}'
+
+# 包含换行的消息（使用真正的换行符或\n的URL编码%0A）
+./ping -u "https://api.example.com" \
+       -wp $'msg=访问失败\\nURL: {$url}\\n错误: {$err}'
+
+# 使用完整URL作为通知地址（webhookParam以http://或https://开头时）
+./ping -u "https://api.example.com" \
+       -wp 'https://emergency-notify.example.com/critical?service=api&error={$err}'
+
 # Docker环境
 docker run -d -p 10101:10101 \
   -e PING_URL="https://api1.com,https://api2.com" \
   -e PING_INTERVAL="5,15" \
-  -e WEBHOOK_PARAMS="service=api1,service=api2" \
+  -e WEBHOOK_PARAMS="service=api1&error={\$err},service=api2&error={\$err}" \
   -e WEBHOOK="https://notify.example.com/alert?token=xxx" \
   yafoo/ping-pong
 ```
+
+**支持的变量占位符**：
+
+| 占位符 | 说明 | 示例值 |
+|--------|------|--------|
+| `{$err}` | 错误信息 | `dial tcp: connection refused` |
+| `{$url}` | 监控的URL | `https://api.example.com/health` |
+| `{$time}` | 当前时间 | `2026-05-06 17:30:15` |
 
 **工作流程**：
 1. 解析配置的监控URL列表
 2. 为每个URL启动独立的goroutine进行监控
 3. 按照配置的间隔时间定时访问URL
 4. 检测访问结果（网络错误或非2xx状态码视为失败）
-5. 失败时调用webhook URL，并追加对应的参数
-6. 持续循环监控
+5. 失败时解析webhook参数中的变量占位符（`{$err}`, `{$url}`, `{$time}`）
+6. **判断webhook参数格式**：
+   - 如果以 `http://` 或 `https://` 开头 → 直接作为通知URL使用
+   - 否则 → 与基础webhook URL合并参数
+7. 调用webhook URL发送通知
+8. 持续循环监控
+
+**高级用法：动态通知URL**
+
+当webhookParam以 `http://` 或 `https://` 开头时，系统会将其视为完整的通知URL，直接使用该URL发送通知，不再与基础webhook URL合并。这允许你根据监控目标动态选择不同的通知端点：
+
+```bash
+# 示例1：不同服务使用不同的通知URL
+./ping -u "https://api1.com,https://api2.com" \
+       -wp 'https://notify1.example.com/alert?error={$err},https://notify2.example.com/critical?error={$err}'
+
+# 示例2：根据错误类型路由到不同的通知渠道
+./ping -u "https://payment-api.com" \
+       -wp 'https://slack-webhook.example.com/payment-alert?msg=支付接口异常: {$err}'
+
+# 示例3：结合变量占位符构建动态URL
+./ping -u "https://api.example.com" \
+       -wp 'https://monitor.example.com/incident/create?source={$url}&error={$err}&time={$time}'
+
+# 示例4：不配置基础webhook，仅使用webhookParam提供完整URL
+./ping -u "https://api.example.com" \
+       -wp 'https://emergency-notify.example.com/critical?error={$err}'
+       # 注意：这里不需要设置 --webhook 参数
+```
+
+**重要说明**：
+
+1. **完整URL模式优先级最高**：
+   - 如果webhookParam是完整URL格式，即使没有配置 `--webhook` 参数，也能正常发送通知
+   - 此时 `--webhook` 参数会被完全忽略
+
+2. **参数合并模式需要基础webhook**：
+   - 如果webhookParam不是完整URL格式，则必须配置 `--webhook` 参数
+   - 否则系统会跳过通知并输出警告日志
+
+3. **灵活组合**：
+   - 可以为不同的监控URL配置不同的通知策略
+   - 有的使用参数合并，有的使用完整URL，互不影响
+
+**注意事项**：
+
+1. **Shell转义问题**：
+   - Linux/Mac：建议使用单引号 `'...'` 包裹包含占位符的参数，防止shell提前展开
+   - Windows PowerShell：使用双引号 `"..."`，但需要对 `$` 进行转义 `` `$ ``
+   - 或者使用 `$'...'` 语法（bash/zsh）来支持 `\n` 等特殊字符
+
+2. **换行符处理**：
+   - 直接在参数中使用 `\n` 不会被识别为换行
+   - 使用 `$'...\n...'` 语法（bash/zsh）插入真实换行
+   - 或使用URL编码 `%0A` 表示换行：`msg=line1%0Aline2`
+
+3. **特殊字符**：
+   - 如果错误信息包含特殊字符（如 `&`, `=`, `?`），会被自动URL编码
+   - 例如：`connection refused & timeout` → `connection%20refused%20%26%20timeout`
 
 ### 参数格式示例
 

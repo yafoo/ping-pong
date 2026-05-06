@@ -23,7 +23,7 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("pong"))
 }
 
-// encodeWebhookURL 智能处理 webhook URL 编码
+// encodeWebhookURL 智能处理 webhook URL 编码，确保参数正确编码且避免双重编码
 func encodeWebhookURL(rawURL string) (string, error) {
 	// 解析 URL
 	parsedURL, err := url.Parse(rawURL)
@@ -31,32 +31,19 @@ func encodeWebhookURL(rawURL string) (string, error) {
 		return "", fmt.Errorf("URL解析失败: %v", err)
 	}
 
-	// 检查查询参数是否已经编码过
-	query := parsedURL.RawQuery
-	if query == "" {
+	// 如果没有查询参数，直接返回
+	if parsedURL.RawQuery == "" {
 		return rawURL, nil
 	}
 
-	// 尝试解码后再重新编码，确保正确编码
-	decodedQuery, err := url.QueryUnescape(query)
+	// 利用 url.ParseQuery 自动解码的特性，统一处理编码
+	values, err := url.ParseQuery(parsedURL.RawQuery)
 	if err != nil {
-		// 如果解码失败，说明可能已经正确编码或部分编码
-		// 直接对每个参数值进行编码
-		values, _ := url.ParseQuery(query)
-		encodedValues := make(url.Values)
-		for k, v := range values {
-			encodedValues[k] = v // 保持原样
-		}
-		parsedURL.RawQuery = encodedValues.Encode()
-		return parsedURL.String(), nil
-	}
-
-	// 成功解码后，重新编码以确保一致性
-	values, err := url.ParseQuery(decodedQuery)
-	if err != nil {
+		// 如果解析失败，保持原样返回
 		return rawURL, nil
 	}
 
+	// 重新编码，确保所有参数都使用标准URL编码
 	parsedURL.RawQuery = values.Encode()
 	return parsedURL.String(), nil
 }
@@ -100,10 +87,10 @@ func mergeWebhookParams(baseURL string, newParams string) string {
 		return baseURL + separator + newParams
 	}
 
-	// 解析现有查询参数
+	// 解析现有查询参数（自动处理已编码的参数）
 	existingParams, _ := url.ParseQuery(parsedURL.RawQuery)
 
-	// 解析新参数
+	// 解析新参数（支持未编码的中文等字符）
 	newParamsParsed, _ := url.ParseQuery(newParams)
 
 	// 合并参数：新参数会覆盖同名的旧参数
@@ -111,9 +98,35 @@ func mergeWebhookParams(baseURL string, newParams string) string {
 		existingParams[key] = values
 	}
 
-	// 重新编码查询字符串
+	// 重新编码查询字符串（Go标准库会自动对所有参数进行正确的URL编码）
 	parsedURL.RawQuery = existingParams.Encode()
 	return parsedURL.String()
+}
+
+// resolveWebhookParamVariables 解析webhook参数中的变量占位符
+// 支持的占位符:
+// - {$err}: 错误信息
+// - {$url}: 监控的URL
+// - {$time}: 当前时间
+func resolveWebhookParamVariables(param string, targetURL string, checkErr error) string {
+	if param == "" {
+		return param
+	}
+
+	// 替换错误信息
+	if checkErr != nil {
+		param = strings.ReplaceAll(param, "{$err}", checkErr.Error())
+	} else {
+		param = strings.ReplaceAll(param, "{$err}", "unknown error")
+	}
+
+	// 替换URL
+	param = strings.ReplaceAll(param, "{$url}", targetURL)
+
+	// 替换时间
+	param = strings.ReplaceAll(param, "{$time}", time.Now().Format("2006-01-02 15:04:05"))
+
+	return param
 }
 
 // parseMultiValue 解析支持分隔符的多值参数
@@ -178,12 +191,48 @@ func monitorURL(targetURL string, intervalMinutes int, webhookURL string, webhoo
 				}
 			}
 
-			// 如果访问失败且有webhook配置,则调用webhook
-			if failed && webhookURL != "" {
-				notificationURL := webhookURL
+			// 如果访问失败，尝试发送webhook通知
+			if failed {
+				var notificationURL string
+
 				if webhookParam != "" {
-					// 智能合并参数：解析现有参数，替换或新增
-					notificationURL = mergeWebhookParams(webhookURL, webhookParam)
+					// 处理参数中的变量占位符
+					resolvedParam := resolveWebhookParamVariables(webhookParam, targetURL, err)
+
+					// 检查resolvedParam是否是完整的URL（以http://或https://开头）
+					if strings.HasPrefix(resolvedParam, "http://") || strings.HasPrefix(resolvedParam, "https://") {
+						// 如果是完整URL，直接作为通知URL使用（即使webhookURL为空也可以）
+						notificationURL = resolvedParam
+						logWithTime("检测到完整URL格式，直接使用作为通知地址")
+					} else if webhookURL != "" {
+						// 如果不是完整URL且有基础webhook URL，则合并参数
+						// 先对基础webhook URL进行编码处理（处理可能存在的中文）
+						encodedWebhook, err := encodeWebhookURL(webhookURL)
+						if err == nil {
+							notificationURL = encodedWebhook
+						} else {
+							notificationURL = webhookURL
+						}
+
+						// 智能合并参数：解析现有参数，替换或新增
+						notificationURL = mergeWebhookParams(notificationURL, resolvedParam)
+					} else {
+						// 既不是完整URL，也没有基础webhook URL，跳过通知
+						logWithTime("警告: webhookParam不是完整URL且未配置基础webhook，跳过通知")
+						continue
+					}
+				} else if webhookURL != "" {
+					// 没有额外参数，但有基础webhook URL，直接使用
+					encodedWebhook, err := encodeWebhookURL(webhookURL)
+					if err == nil {
+						notificationURL = encodedWebhook
+					} else {
+						notificationURL = webhookURL
+					}
+				} else {
+					// 既没有webhookParam也没有webhookURL，跳过通知
+					logWithTime("警告: 未配置webhook通知地址，跳过通知")
+					continue
 				}
 
 				logWithTime(fmt.Sprintf("发送失败通知到: %s", notificationURL))

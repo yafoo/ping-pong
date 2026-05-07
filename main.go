@@ -372,7 +372,7 @@ func main() {
 			}
 		}()
 
-		logWithTime("[启动阶段] Webhook调用已在后台启动，继续初始化服务...")
+		logWithTime("[启动阶段] WEBHOOK调用已在后台启动，继续初始化服务...")
 	}
 
 	logWithTime(fmt.Sprintf("[启动阶段] 启动ping-pong HTTP服务（端口%s）...", port))

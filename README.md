@@ -122,6 +122,21 @@ export WEBHOOK=https://www.example.com
        -w "https://notify.example.com/alert"
 ```
 
+### 最佳实践（以PushMe为例）
+```bash
+# 实现功能：
+# 1. 系统启动或异常重启时，会给你PushMe客户端发送系统启动的通知
+# 2. 在默认端口10101上启动ping-pong HTTP服务，以被其他工具监控
+# 3. 启动URL监控服务，每隔5分钟和15分钟分别检查https://api1.com和https://api2.com接口状态
+# 4. 当接口访问失败时，会给你PushMe客户端发送接口访问失败+错误内容的通知
+# 以命令行短参数为例
+./ping -w 'https://push.i-i.me/?push_key=YourPushKey&title=ping-pong&content=系统已启动：SystemName' \
+       -u 'https://api1.com,https://api2.com' \
+       -i '5,15' \
+       -wp 'content=api1接口异常%0A{$err},content=api2接口异常%0A{$err}'
+```
+
+
 ### 测试服务
 
 ```bash

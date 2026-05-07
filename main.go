@@ -12,8 +12,24 @@ import (
 	"time"
 )
 
+func setupTimezone(timezoneOffset string) {
+	if timezoneOffset == "" || timezoneOffset == "0" {
+		return
+	}
+
+	// 将时区偏移量转换为整数
+	timezoneOffsetInt, err := strconv.Atoi(timezoneOffset)
+	if err != nil {
+		logWithTime("[启动阶段] 警告: 时区偏移量转换失败，请检查输入: " + timezoneOffset)
+		return
+	}
+
+	time.FixedZone("CST", timezoneOffsetInt)
+	logWithTime("[启动阶段] 已设置时区偏移为: " + timezoneOffset)
+}
+
 func logWithTime(message string) {
-	now := time.Now().Format("2006-01-02 15:04:05")
+	now := time.Now().Format("2006-01-02 15:04:05 MST")
 	fmt.Printf("[%s] %s\n", now, message)
 }
 
@@ -279,6 +295,10 @@ func main() {
 	portShort := flag.String("p", "", "HTTP service port (default: 10101) (short)")
 	portLong := flag.String("port", "", "HTTP service port (default: 10101) (long)")
 
+	// 时区配置参数
+	timezoneOffsetShort := flag.String("t", "", "Timezone offset in seconds from UTC (short)")
+	timezoneOffsetLong := flag.String("tz-offset", "", "Timezone offset in seconds from UTC (long)")
+
 	// 新增监控相关参数
 	pingURLShort := flag.String("u", "", "URL to ping/monitor (comma/semicolon/pipe separated for multiple) (short)")
 	pingURLLong := flag.String("ping-url", "", "URL to ping/monitor (comma/semicolon/pipe separated for multiple) (long)")
@@ -288,6 +308,10 @@ func main() {
 	webhookParamsLong := flag.String("webhook-params", "", "Webhook parameters to append on failure (comma/semicolon/pipe separated) (long)")
 
 	flag.Parse()
+
+	// 设置时区（必须在其他操作之前）
+	timezoneOffset := getConfigValue(timezoneOffsetShort, timezoneOffsetLong, "TZ_OFFSET", "")
+	setupTimezone(timezoneOffset)
 
 	// 使用通用函数获取配置
 	webhook := getConfigValue(webhookShort, webhookLong, "WEBHOOK", "")

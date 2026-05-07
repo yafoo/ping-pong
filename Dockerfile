@@ -35,6 +35,9 @@ COPY --from=builder /app/ping-pong .
 # 暴露端口
 EXPOSE 10101
 
+# 设置时区偏移环境变量（默认中国标准时间 UTC+8）
+ENV TZ_OFFSET="28800"
+
 # 设置环境变量（基础配置）
 ENV WEBHOOK=""
 

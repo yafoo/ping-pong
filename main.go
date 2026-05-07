@@ -297,38 +297,44 @@ func main() {
 	webhookParamsValue := getConfigValue(webhookParamsShort, webhookParamsLong, "WEBHOOK_PARAMS", "")
 
 	if webhook == "" {
-		logWithTime("警告: WEBHOOK 未设置（既无命令行参数也无环境变量），将跳过URL访问步骤")
+		logWithTime("[启动阶段] 警告: WEBHOOK 未设置（既无命令行参数也无环境变量），将跳过URL访问步骤")
 	} else {
-		logWithTime("正在访问指定的WEBHOOK")
+		logWithTime("[启动阶段] 正在异步访问指定的WEBHOOK...")
 
-		// 智能处理 URL 编码
-		encodedWebhook, err := encodeWebhookURL(webhook)
-		if err != nil {
-			logWithTime(fmt.Sprintf("URL编码处理警告: %v（使用原始URL）", err))
-			encodedWebhook = webhook
-		} else if encodedWebhook != webhook {
-			logWithTime("已对WEBHOOK URL进行编码处理")
-		}
+		// 异步调用 webhook，不阻塞应用启动
+		go func() {
+			// 智能处理 URL 编码
+			encodedWebhook, err := encodeWebhookURL(webhook)
+			if err != nil {
+				logWithTime(fmt.Sprintf("[启动阶段] URL编码处理警告: %v（使用原始URL）", err))
+				encodedWebhook = webhook
+			} else if encodedWebhook != webhook {
+				logWithTime("[启动阶段] 已对WEBHOOK URL进行编码处理")
+			}
 
-		// 创建自定义 HTTP 客户端，跳过证书验证
-		tr := &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
-		client := &http.Client{
-			Timeout:   10 * time.Second,
-			Transport: tr,
-		}
+			// 创建自定义 HTTP 客户端，跳过证书验证
+			tr := &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			}
+			client := &http.Client{
+				Timeout:   10 * time.Second,
+				Transport: tr,
+			}
 
-		resp, err := client.Get(encodedWebhook)
-		if err != nil {
-			logWithTime(fmt.Sprintf("访问WEBHOOK失败: %v（继续启动服务）", err))
-		} else {
-			resp.Body.Close()
-			logWithTime("WEBHOOK访问完成")
-		}
+			resp, err := client.Get(encodedWebhook)
+			if err != nil {
+				logWithTime(fmt.Sprintf("[启动阶段] 访问WEBHOOK失败: %v", err))
+				logWithTime("[启动阶段] 提示：请检查WEBHOOK URL是否可达，或考虑增加超时时间")
+			} else {
+				defer resp.Body.Close()
+				logWithTime(fmt.Sprintf("[启动阶段] WEBHOOK访问完成 (状态码: %d)", resp.StatusCode))
+			}
+		}()
+
+		logWithTime("[启动阶段] Webhook调用已在后台启动，继续初始化服务...")
 	}
 
-	logWithTime(fmt.Sprintf("启动ping-pong HTTP服务（端口%s）...", port))
+	logWithTime(fmt.Sprintf("[启动阶段] 启动ping-pong HTTP服务（端口%s）...", port))
 
 	http.HandleFunc("/", pingHandler)
 
@@ -347,9 +353,9 @@ func main() {
 		WriteTimeout: 5 * time.Second,
 	}
 
-	logWithTime(fmt.Sprintf("服务已启动，监听端口 %s", port))
+	logWithTime(fmt.Sprintf("[启动阶段] 服务已启动，监听端口 %s", port))
 	if err := server.ListenAndServe(); err != nil {
-		logWithTime(fmt.Sprintf("服务错误: %v", err))
+		logWithTime(fmt.Sprintf("[启动阶段] 服务错误: %v", err))
 		os.Exit(1)
 	}
 }

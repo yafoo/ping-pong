@@ -206,16 +206,7 @@ func monitorURL(targetURL string, intervalMinutes int, webhookURL string, webhoo
 						logWithTime("检测到完整URL格式，直接使用作为通知地址")
 					} else if webhookURL != "" {
 						// 如果不是完整URL且有基础webhook URL，则合并参数
-						// 先对基础webhook URL进行编码处理（处理可能存在的中文）
-						encodedWebhook, err := encodeWebhookURL(webhookURL)
-						if err == nil {
-							notificationURL = encodedWebhook
-						} else {
-							notificationURL = webhookURL
-						}
-
-						// 智能合并参数：解析现有参数，替换或新增
-						notificationURL = mergeWebhookParams(notificationURL, resolvedParam)
+						notificationURL = mergeWebhookParams(webhookURL, resolvedParam)
 					} else {
 						// 既不是完整URL，也没有基础webhook URL，跳过通知
 						logWithTime("警告: webhookParam不是完整URL且未配置基础webhook，跳过通知")
@@ -223,16 +214,17 @@ func monitorURL(targetURL string, intervalMinutes int, webhookURL string, webhoo
 					}
 				} else if webhookURL != "" {
 					// 没有额外参数，但有基础webhook URL，直接使用
-					encodedWebhook, err := encodeWebhookURL(webhookURL)
-					if err == nil {
-						notificationURL = encodedWebhook
-					} else {
-						notificationURL = webhookURL
-					}
+					notificationURL = webhookURL
 				} else {
 					// 既没有webhookParam也没有webhookURL，跳过通知
 					logWithTime("警告: 未配置webhook通知地址，跳过通知")
 					continue
+				}
+
+				// 统一对最终的通知URL进行编码处理
+				encodedURL, encodeErr := encodeWebhookURL(notificationURL)
+				if encodeErr == nil {
+					notificationURL = encodedURL
 				}
 
 				logWithTime(fmt.Sprintf("发送失败通知到: %s", notificationURL))

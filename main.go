@@ -12,20 +12,37 @@ import (
 	"time"
 )
 
+// setupTimezone 设置时区
 func setupTimezone(timezoneOffset string) {
-	if timezoneOffset == "" || timezoneOffset == "0" {
+	if timezoneOffset == "" {
 		return
 	}
 
-	// 将时区偏移量转换为整数
-	timezoneOffsetInt, err := strconv.Atoi(timezoneOffset)
+	// 解析偏移量
+	offsetSeconds, err := strconv.Atoi(timezoneOffset)
 	if err != nil {
-		logWithTime("[启动阶段] 警告: 时区偏移量转换失败，请检查输入: " + timezoneOffset)
-		return
+		fmt.Printf("[警告] 无效的时区偏移量 '%s': %v，使用默认值 0\n", timezoneOffset, err)
+		offsetSeconds = 0
 	}
 
-	time.FixedZone("CST", timezoneOffsetInt)
-	logWithTime("[启动阶段] 已设置时区偏移为: " + timezoneOffset)
+	// 验证偏移量范围（-43200 到 50400，即 UTC-12 到 UTC+14）
+	if offsetSeconds < -43200 || offsetSeconds > 50400 {
+		fmt.Printf("[警告] 时区偏移量 %d 超出有效范围（-43200 到 50400），使用默认值 0\n", offsetSeconds)
+		offsetSeconds = 0
+	}
+
+	// 创建固定偏移量时区并设置到 time.Local
+	var zoneName string
+	if offsetSeconds == 0 {
+		zoneName = "UTC"
+	} else if offsetSeconds > 0 {
+		zoneName = fmt.Sprintf("UTC+%d", offsetSeconds/3600)
+	} else {
+		zoneName = fmt.Sprintf("UTC%d", offsetSeconds/3600)
+	}
+
+	time.Local = time.FixedZone(zoneName, offsetSeconds)
+	logWithTime(fmt.Sprintf("[启动阶段] 已设置时区为: %s (偏移量: %d秒)", zoneName, offsetSeconds))
 }
 
 func logWithTime(message string) {
@@ -321,7 +338,7 @@ func main() {
 	webhookParamsValue := getConfigValue(webhookParamsShort, webhookParamsLong, "WEBHOOK_PARAMS", "")
 
 	if webhook == "" {
-		logWithTime("[启动阶段] 警告: WEBHOOK 未设置（既无命令行参数也无环境变量），将跳过URL访问步骤")
+		logWithTime("[警告] WEBHOOK 未设置（既无命令行参数也无环境变量），将跳过URL访问步骤")
 	} else {
 		logWithTime("[启动阶段] 正在异步访问指定的WEBHOOK...")
 
